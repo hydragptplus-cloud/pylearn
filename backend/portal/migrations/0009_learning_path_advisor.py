@@ -1,0 +1,34 @@
+from django.conf import settings
+from django.db import migrations, models
+import django.db.models.deletion
+
+
+def migrate_initial_quizzes(apps, schema_editor):
+    Quiz = apps.get_model("portal", "Quiz")
+    Quiz.objects.filter(is_initial_assessment=True).update(quiz_type="SKILL_DISCOVERY")
+
+
+class Migration(migrations.Migration):
+    dependencies = [("portal", "0008_alter_quiz_course"), migrations.swappable_dependency(settings.AUTH_USER_MODEL)]
+    operations = [
+        migrations.CreateModel(name="LearningField", fields=[("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")), ("name", models.CharField(max_length=120, unique=True)), ("slug", models.SlugField(max_length=140, unique=True)), ("description", models.TextField(blank=True)), ("is_active", models.BooleanField(db_index=True, default=True)), ("order", models.PositiveIntegerField(default=0))], options={"ordering": ["order", "name"]}),
+        migrations.CreateModel(name="AdvisorSkill", fields=[("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")), ("name", models.CharField(max_length=120)), ("description", models.TextField(blank=True)), ("is_active", models.BooleanField(default=True)), ("field", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="skills", to="portal.learningfield"))]),
+        migrations.AddConstraint(model_name="advisorskill", constraint=models.UniqueConstraint(fields=("field", "name"), name="unique_advisor_skill")),
+        migrations.AddField(model_name="quiz", name="quiz_type", field=models.CharField(choices=[("COURSE", "Course quiz"), ("SKILL_DISCOVERY", "Skill Discovery"), ("SKILL_DEVELOPMENT", "Skill Development")], db_index=True, default="COURSE", max_length=24)),
+        migrations.AddField(model_name="quiz", name="target_field", field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name="development_quizzes", to="portal.learningfield")),
+        migrations.AddField(model_name="question", name="learning_field", field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name="questions", to="portal.learningfield")),
+        migrations.AddField(model_name="question", name="advisor_skill", field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name="questions", to="portal.advisorskill")),
+        migrations.AddField(model_name="question", name="grading_rubric", field=models.TextField(blank=True)),
+        migrations.AlterField(model_name="question", name="question_type", field=models.CharField(choices=[("MULTIPLE_CHOICE", "Multiple choice"), ("TRUE_FALSE", "True or false"), ("SHORT_ANSWER", "Short answer"), ("LONG_ANSWER", "Long answer")], max_length=20)),
+        migrations.AddField(model_name="quizattempt", name="analysis_status", field=models.CharField(choices=[("NOT_REQUIRED", "Not required"), ("SUBMITTED", "Awaiting analysis"), ("ANALYZING", "Analyzing"), ("DRAFT_READY", "Draft ready"), ("ANALYSIS_FAILED", "Analysis failed"), ("PUBLISHED", "Published")], db_index=True, default="NOT_REQUIRED", max_length=20)),
+        migrations.AddField(model_name="quizattempt", name="analysis_error", field=models.TextField(blank=True)),
+        migrations.AddField(model_name="quizattempt", name="analyzed_at", field=models.DateTimeField(blank=True, null=True)),
+        migrations.AddField(model_name="quizattempt", name="published_at", field=models.DateTimeField(blank=True, null=True)),
+        migrations.AddField(model_name="quizanswer", name="ai_feedback", field=models.TextField(blank=True)),
+        migrations.CreateModel(name="CourseSkill", fields=[("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")), ("coverage", models.PositiveSmallIntegerField(default=100)), ("course", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="advisor_skill_mappings", to="portal.course")), ("skill", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="course_mappings", to="portal.advisorskill"))]),
+        migrations.AddConstraint(model_name="courseskill", constraint=models.UniqueConstraint(fields=("course", "skill"), name="unique_course_advisor_skill")),
+        migrations.CreateModel(name="AdvisorAnalysis", fields=[("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")), ("summary", models.TextField(blank=True)), ("strongest_skills", models.JSONField(default=list)), ("field_scores", models.JSONField(default=list)), ("strengths", models.JSONField(default=list)), ("gaps", models.JSONField(default=list)), ("level", models.CharField(blank=True, choices=[("BEGINNER", "Beginner"), ("INTERMEDIATE", "Intermediate"), ("ADVANCED", "Advanced")], max_length=20)), ("ai_payload", models.JSONField(default=dict)), ("created_at", models.DateTimeField(auto_now_add=True)), ("updated_at", models.DateTimeField(auto_now=True)), ("attempt", models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name="advisor_analysis", to="portal.quizattempt")), ("reviewed_by", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name="reviewed_advisor_analyses", to=settings.AUTH_USER_MODEL)), ("strongest_field", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name="strongest_results", to="portal.learningfield"))]),
+        migrations.CreateModel(name="AdvisorRecommendation", fields=[("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")), ("match_type", models.CharField(choices=[("ADVANCED", "Advanced"), ("EXACT_MATCH", "Exact match"), ("BEST_RELATED", "Best related")], max_length=20)), ("reason", models.TextField()), ("analysis", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="recommendations", to="portal.advisoranalysis")), ("course", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="advisor_recommendations", to="portal.course"))]),
+        migrations.CreateModel(name="AdvisorAuditLog", fields=[("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")), ("action", models.CharField(max_length=40)), ("changes", models.JSONField(default=dict)), ("created_at", models.DateTimeField(auto_now_add=True)), ("actor", models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)), ("analysis", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="audit_logs", to="portal.advisoranalysis"))], options={"ordering": ["-created_at"]}),
+        migrations.RunPython(migrate_initial_quizzes, migrations.RunPython.noop),
+    ]
